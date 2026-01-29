@@ -1,0 +1,46 @@
+ Voraussetzungen
+
+ Server:
+ - Node.js >= 18
+ - PHP >= 7.4
+ - osTicket >= 1.15
+ - MySQL/MariaDB
+
+
+ Verifizierung
+
+ 1. Node.js Service starten: node src/index.js
+ 2. QR-Code mit WhatsApp scannen
+ 3. Status pruefen: curl http://localhost:3000/status
+ 4. Test-Nachricht von anderem Handy senden
+ 5. In osTicket pruefen ob Ticket erstellt wurde
+ 6. Auf Ticket antworten
+ 7. Pruefen ob Antwort auf WhatsApp ankommt
+
+
+
+
+  Naechste Schritte
+
+  1. Dependencies installieren:
+  cd whatsapp-service
+  npm install
+  2. Konfiguration erstellen:
+  cp .env.example .env
+  # Dann .env bearbeiten mit deiner osTicket-URL
+  3. GitHub Repository erstellen:
+  git init
+  git add .
+  git commit -m "Initial commit: osTicket WhatsApp Integration"
+  git remote add origin https://github.com/dein-username/osticket-whatsapp.git
+  git push -u origin main
+
+  Dokumentation
+
+  Das README.md enthaelt:
+  - Vollstaendige Installationsanleitung
+  - API-Dokumentation
+  - Konfigurationsoptionen
+  - Troubleshooting
+  - Sicherheitsempfehlungen
+  - MIT Lizenz
