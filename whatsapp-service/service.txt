@@ -1,0 +1,28 @@
+  Wrapper-Scripts:
+  - start-service.bat - Einfaches Batch-Script
+  - start-service.ps1 - PowerShell-Version mit mehr Features
+
+  NSSM Installation:
+  - install-service.bat - Installiert als Windows-Service (als Admin ausfuehren)
+  - uninstall-service.bat - Entfernt den Service
+
+  Verwendung mit NSSM:
+  # Als Administrator ausfuehren:
+  install-service.bat
+
+  # Danach verfuegbar:
+  nssm start WhatsAppOsTicket
+  nssm stop WhatsAppOsTicket
+  nssm restart WhatsAppOsTicket
+  nssm status WhatsAppOsTicket
+
+  Log-Konfiguration:
+  In .env kannst du optional setzen:
+  LOG_DIR=C:\path\to\logs
+
+  Logs werden gespeichert unter:
+  - logs/service-stdout.log - Normale Ausgaben
+  - logs/service-stderr.log - Fehler
+  - Automatische Log-Rotation bei 10MB
+
+  Der Service startet automatisch mit Windows und neustartet sich bei Fehlern nach 5 Sekunden.

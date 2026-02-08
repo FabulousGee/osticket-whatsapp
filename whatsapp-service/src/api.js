@@ -1,12 +1,22 @@
 /**
  * REST API for WhatsApp Service
- * Provides endpoints for sending messages and checking status
+ *
+ * Provides endpoints for sending messages and checking status.
+ * Uses centralized validation middleware for consistent error handling.
  */
 
 const express = require('express');
 const cors = require('cors');
 const pino = require('pino');
-const { sendMessage, getStatus, getQrCode, isConnected } = require('./whatsapp');
+const { sendMessage, sendInteractiveMessage, getStatus, getQrCode, isConnected } = require('./whatsapp');
+const {
+    validateSendRequest,
+    validateInteractiveRequest,
+    requireConnection,
+    requireApiKey,
+    requestLogger
+} = require('./middleware/validation');
+const constants = require('./config/constants');
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 const app = express();
@@ -14,12 +24,10 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 
-// Request logging
-app.use((req, res, next) => {
-    logger.debug({ method: req.method, path: req.path }, 'API request');
-    next();
-});
+// Connection check middleware (muss hier definiert werden wegen isConnected)
+const checkConnection = requireConnection(isConnected);
 
 /**
  * Health check endpoint
@@ -49,7 +57,7 @@ app.get('/qr', (req, res) => {
 
     if (!qr) {
         const status = getStatus();
-        if (status.state === 'connected') {
+        if (status.state === constants.CONNECTION_STATES.CONNECTED) {
             return res.json({
                 success: false,
                 error: 'Already connected - no QR code needed'
@@ -72,82 +80,86 @@ app.get('/qr', (req, res) => {
  * POST /send
  * Body: { phone: string, message: string }
  */
-app.post('/send', async (req, res) => {
-    const { phone, message } = req.body;
+app.post('/send',
+    validateSendRequest,
+    checkConnection,
+    async (req, res) => {
+        const { phone, message } = req.body;
 
-    // Validate input
-    if (!phone || !message) {
-        return res.status(400).json({
-            success: false,
-            error: 'Missing required fields: phone, message'
-        });
+        try {
+            const result = await sendMessage(phone, message);
+            res.json(result);
+        } catch (error) {
+            logger.error({ error: error.message, phone }, 'Failed to send message');
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
     }
-
-    // Check connection
-    if (!isConnected()) {
-        return res.status(503).json({
-            success: false,
-            error: 'WhatsApp not connected'
-        });
-    }
-
-    try {
-        const result = await sendMessage(phone, message);
-        res.json(result);
-    } catch (error) {
-        logger.error({ error: error.message, phone }, 'Failed to send message');
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+);
 
 /**
- * Send message with authentication check
+ * Send message with API key authentication
  * POST /send-secure
  * Headers: X-API-Key
  * Body: { phone: string, message: string }
  */
-app.post('/send-secure', async (req, res) => {
-    const apiKey = req.headers['x-api-key'];
-    const expectedKey = process.env.API_KEY;
+app.post('/send-secure',
+    requireApiKey,
+    validateSendRequest,
+    checkConnection,
+    async (req, res) => {
+        const { phone, message } = req.body;
 
-    if (expectedKey && apiKey !== expectedKey) {
-        return res.status(401).json({
-            success: false,
-            error: 'Invalid API key'
-        });
+        try {
+            const result = await sendMessage(phone, message);
+            res.json(result);
+        } catch (error) {
+            logger.error({ error: error.message, phone }, 'Failed to send message');
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
     }
+);
 
-    // Forward to regular send endpoint logic
-    const { phone, message } = req.body;
+/**
+ * Send interactive message (buttons/list) for testing
+ * POST /sendInteractive
+ * Body: { phone: string, type: string, text: string, buttons: array, ... }
+ *
+ * Types:
+ * - "buttons": Legacy button format
+ * - "list": List/menu format
+ * - "interactive": Native flow with quick_reply, cta_url, cta_copy
+ */
+app.post('/sendInteractive',
+    validateInteractiveRequest,
+    checkConnection,
+    async (req, res) => {
+        const { phone, type, text, footer, title, buttons, sections } = req.body;
 
-    if (!phone || !message) {
-        return res.status(400).json({
-            success: false,
-            error: 'Missing required fields: phone, message'
-        });
+        try {
+            const result = await sendInteractiveMessage(phone, {
+                type,
+                text,
+                footer,
+                title,
+                buttons,
+                sections
+            });
+            res.json(result);
+        } catch (error) {
+            logger.error({ error: error.message, phone, type }, 'Failed to send interactive message');
+            res.status(500).json({
+                success: false,
+                error: error.message
+            });
+        }
     }
-
-    if (!isConnected()) {
-        return res.status(503).json({
-            success: false,
-            error: 'WhatsApp not connected'
-        });
-    }
-
-    try {
-        const result = await sendMessage(phone, message);
-        res.json(result);
-    } catch (error) {
-        logger.error({ error: error.message, phone }, 'Failed to send message');
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
+);
 
 /**
  * 404 handler
@@ -163,7 +175,7 @@ app.use((req, res) => {
  * Error handler
  */
 app.use((error, req, res, next) => {
-    logger.error({ error: error.message }, 'Unhandled error');
+    logger.error({ error: error.message, stack: error.stack }, 'Unhandled error');
     res.status(500).json({
         success: false,
         error: 'Internal server error'
@@ -174,17 +186,19 @@ app.use((error, req, res, next) => {
  * Start the API server
  */
 function startServer() {
-    const port = process.env.PORT || 3000;
-    const host = process.env.HOST || '127.0.0.1';
+    const port = process.env.PORT || constants.DEFAULT_PORT;
+    const host = process.env.HOST || constants.DEFAULT_HOST;
 
     app.listen(port, host, () => {
         logger.info({ host, port }, 'API server started');
         console.log(`\nAPI Server running at http://${host}:${port}`);
         console.log('\nEndpoints:');
-        console.log('  GET  /status     - Connection status');
-        console.log('  GET  /qr         - Get QR code');
-        console.log('  POST /send       - Send message');
-        console.log('  GET  /health     - Health check\n');
+        console.log('  GET  /status          - Connection status');
+        console.log('  GET  /qr              - Get QR code');
+        console.log('  POST /send            - Send message');
+        console.log('  POST /send-secure     - Send message (requires API key)');
+        console.log('  POST /sendInteractive - Send interactive message (buttons/list)');
+        console.log('  GET  /health          - Health check\n');
     });
 }
 

@@ -8,10 +8,11 @@
     "dev": "node --watch src/index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.16",
+    "@whiskeysockets/baileys": "github:WhiskeySockets/Baileys#250477497d2eda75b823a4f535e75b0872f4368c",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
+    "node-cache": "^5.1.2",
     "pino": "^9.6.0",
     "qrcode-terminal": "^0.12.0"
   },

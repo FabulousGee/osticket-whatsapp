@@ -2,20 +2,44 @@
 /**
  * WhatsApp API Client
  *
- * Communicates with the WhatsApp Node.js service
+ * Kommuniziert mit dem WhatsApp Node.js Service für das Senden
+ * und Empfangen von Nachrichten. Verwendet cURL für HTTP-Requests.
+ *
+ * @package WhatsAppPlugin
+ * @version 1.0.0
  */
 
 class WhatsAppApi
 {
+    /**
+     * Basis-URL des WhatsApp-Service
+     *
+     * @var string
+     */
     private $baseUrl;
+
+    /**
+     * API-Schlüssel für Authentifizierung (optional)
+     *
+     * @var string|null
+     */
     private $apiKey;
+
+    /**
+     * Request-Timeout in Sekunden
+     *
+     * @var int
+     */
     private $timeout = 10;
 
     /**
-     * Constructor
+     * Konstruktor
      *
-     * @param string $baseUrl Service URL (e.g., http://127.0.0.1:3000)
-     * @param string $apiKey Optional API key for authentication
+     * Initialisiert den API-Client mit der Service-URL und
+     * optionalem API-Schlüssel.
+     *
+     * @param string $baseUrl Service-URL (z.B. http://127.0.0.1:3000)
+     * @param string|null $apiKey Optionaler API-Schlüssel für Authentifizierung
      */
     public function __construct($baseUrl, $apiKey = null)
     {
@@ -24,15 +48,32 @@ class WhatsAppApi
     }
 
     /**
-     * Send a text message via WhatsApp
+     * Sendet eine Textnachricht via WhatsApp
      *
-     * @param string $phone Phone number (with country code)
-     * @param string $message Message text
-     * @return array Result with success status
+     * Sendet eine Nachricht an die angegebene Telefonnummer.
+     * Verwendet den /send-secure Endpoint wenn ein API-Key konfiguriert ist,
+     * sonst /send.
+     *
+     * @param string $phone Telefonnummer mit Ländercode (z.B. 491234567890)
+     * @param string $message Nachrichtentext
+     * @return array Ergebnis-Array:
+     *   - success: bool - True bei Erfolg
+     *   - messageId: string - WhatsApp Message-ID (bei Erfolg)
+     *   - error: string - Fehlermeldung (bei Fehler)
+     *
+     * @example
+     * $api = new WhatsAppApi('http://127.0.0.1:3000');
+     * $result = $api->sendMessage('491234567890', 'Hallo Welt!');
+     * if ($result['success']) {
+     *     echo 'Gesendet: ' . $result['messageId'];
+     * }
      */
     public function sendMessage($phone, $message)
     {
         $endpoint = $this->apiKey ? '/send-secure' : '/send';
+
+        // HTML zu Plain-Text konvertieren fuer WhatsApp
+        $message = $this->formatForWhatsApp($message);
 
         return $this->request('POST', $endpoint, [
             'phone' => $phone,
@@ -41,9 +82,59 @@ class WhatsAppApi
     }
 
     /**
-     * Get service connection status
+     * Konvertiert HTML-Text zu WhatsApp-kompatiblem Plain-Text
      *
-     * @return array Status information
+     * Wandelt HTML-Tags in entsprechende Zeilenumbrueche um und
+     * entfernt alle verbleibenden HTML-Elemente.
+     *
+     * @param string $text Eingabetext (kann HTML enthalten)
+     * @return string Bereinigter Text fuer WhatsApp
+     */
+    private function formatForWhatsApp($text)
+    {
+        if (empty($text)) {
+            return '';
+        }
+
+        // 1. Paragraph-Ende (</p>) durch doppelte Zeilenumbrueche ersetzen
+        $text = preg_replace('/<\/p>\s*/i', "\n\n", $text);
+
+        // 2. Paragraph-Anfang (<p>) entfernen
+        $text = preg_replace('/<p[^>]*>/i', '', $text);
+
+        // 3. <br>-Tags (alle Varianten: <br>, <br/>, <br />) in Zeilenumbrueche
+        $text = preg_replace('/<br\s*\/?>/i', "\n", $text);
+
+        // 4. <div>-Tags als Zeilenumbrueche behandeln
+        $text = preg_replace('/<\/div>\s*/i', "\n", $text);
+        $text = preg_replace('/<div[^>]*>/i', '', $text);
+
+        // 5. Restliche HTML-Tags entfernen
+        $text = strip_tags($text);
+
+        // 6. HTML-Entities dekodieren (z.B. &amp; -> &, &nbsp; -> Leerzeichen)
+        $text = html_entity_decode($text, ENT_QUOTES, 'UTF-8');
+
+        // 7. Non-breaking spaces durch normale Leerzeichen ersetzen
+        $text = str_replace("\xc2\xa0", ' ', $text);
+
+        // 8. Mehrfache Zeilenumbrueche reduzieren (max. 2)
+        $text = preg_replace("/\n{3,}/", "\n\n", $text);
+
+        // 9. Whitespace trimmen
+        return trim($text);
+    }
+
+    /**
+     * Ruft den Verbindungsstatus des Service ab
+     *
+     * Gibt Informationen über den aktuellen Status der
+     * WhatsApp-Verbindung zurück.
+     *
+     * @return array Status-Array:
+     *   - success: bool - True wenn Abfrage erfolgreich
+     *   - state: string - Verbindungsstatus ('connected', 'disconnected', etc.)
+     *   - qr: string - QR-Code falls Verbindung erforderlich (optional)
      */
     public function getStatus()
     {
@@ -51,9 +142,12 @@ class WhatsAppApi
     }
 
     /**
-     * Check if service is connected to WhatsApp
+     * Prüft ob der Service mit WhatsApp verbunden ist
      *
-     * @return bool
+     * Kurzform-Methode die true zurückgibt wenn der Service
+     * aktiv mit WhatsApp verbunden ist.
+     *
+     * @return bool True wenn verbunden
      */
     public function isConnected()
     {
@@ -62,12 +156,20 @@ class WhatsAppApi
     }
 
     /**
-     * Make HTTP request to the service
+     * Führt einen HTTP-Request zum Service aus
      *
-     * @param string $method HTTP method
-     * @param string $endpoint API endpoint
-     * @param array $data Request data (for POST)
-     * @return array Response data
+     * Interne Methode die cURL verwendet um mit dem WhatsApp-Service
+     * zu kommunizieren. Unterstützt GET und POST Requests mit
+     * JSON-Daten.
+     *
+     * @param string $method HTTP-Methode ('GET' oder 'POST')
+     * @param string $endpoint API-Endpoint (z.B. '/send')
+     * @param array|null $data Request-Daten für POST (wird zu JSON konvertiert)
+     * @return array Response-Array:
+     *   - success: bool - True bei HTTP 2xx
+     *   - error: string - Fehlermeldung bei Fehler
+     *   - http_code: int - HTTP-Statuscode bei Fehler
+     *   - ... weitere Felder aus der API-Response
      */
     private function request($method, $endpoint, $data = null)
     {
@@ -102,6 +204,7 @@ class WhatsAppApi
         curl_close($ch);
 
         if ($error) {
+            error_log('WhatsApp API: Connection error to ' . $url . ' - ' . $error);
             return [
                 'success' => false,
                 'error' => 'Connection error: ' . $error,
@@ -114,6 +217,7 @@ class WhatsAppApi
             return $result ?: ['success' => true];
         }
 
+        error_log('WhatsApp API: HTTP ' . $httpCode . ' from ' . $url . ' - ' . ($result['error'] ?? 'Unknown error'));
         return [
             'success' => false,
             'error' => $result['error'] ?? "HTTP Error: {$httpCode}",

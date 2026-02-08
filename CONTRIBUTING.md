@@ -87,7 +87,7 @@ osticket-whatsapp/
 |       |-- class.WhatsAppApi.php
 |       |-- class.WhatsAppMapping.php
 |       |-- class.WhatsAppWebhook.php
-|       |-- webhook.php         # Webhook-Endpunkt
+|       |-- whatsapp-webhook.php # Webhook-Endpunkt
 |       |-- install.sql         # DB-Schema
 ```
 
